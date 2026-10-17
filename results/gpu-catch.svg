@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360" viewBox="0 0 760 360" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="12">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="64" y="22" font-size="14" font-weight="600" fill="#222">Slow GPUs caught on the right node, by slowdown</text>
+<line x1="64" x2="580.0" y1="312.0" y2="312.0" stroke="#e5e5e5"/>
+<text x="58" y="316.0" text-anchor="end" fill="#666">0%</text>
+<line x1="64" x2="580.0" y1="257.6" y2="257.6" stroke="#e5e5e5"/>
+<text x="58" y="261.6" text-anchor="end" fill="#666">20%</text>
+<line x1="64" x2="580.0" y1="203.2" y2="203.2" stroke="#e5e5e5"/>
+<text x="58" y="207.2" text-anchor="end" fill="#666">40%</text>
+<line x1="64" x2="580.0" y1="148.8" y2="148.8" stroke="#e5e5e5"/>
+<text x="58" y="152.8" text-anchor="end" fill="#666">60%</text>
+<line x1="64" x2="580.0" y1="94.4" y2="94.4" stroke="#e5e5e5"/>
+<text x="58" y="98.4" text-anchor="end" fill="#666">80%</text>
+<line x1="64" x2="580.0" y1="40.0" y2="40.0" stroke="#e5e5e5"/>
+<text x="58" y="44.0" text-anchor="end" fill="#666">100%</text>
+<text x="64.0" y="328.0" text-anchor="middle" fill="#666">1</text>
+<text x="167.2" y="328.0" text-anchor="middle" fill="#666">1.1</text>
+<text x="270.4" y="328.0" text-anchor="middle" fill="#666">1.2000000000000002</text>
+<text x="373.6" y="328.0" text-anchor="middle" fill="#666">1.3000000000000003</text>
+<text x="476.8" y="328.0" text-anchor="middle" fill="#666">1.4000000000000004</text>
+<text x="580.0" y="328.0" text-anchor="middle" fill="#666">1.5000000000000004</text>
+<text x="322.0" y="350" text-anchor="middle" fill="#444">slowdown (x)</text>
+<text transform="translate(16 176.0) rotate(-90)" text-anchor="middle" fill="#444">caught</text>
+<rect x="64" y="40" width="516" height="272" fill="none" stroke="#bbb"/>
+<path d="M95.0 85.3 L115.6 40.0 L167.2 40.0 L270.4 40.0 L580.0 40.0" fill="none" stroke="#1b6ca8" stroke-width="2"/>
+<line x1="594" x2="616" y1="48" y2="48" stroke="#1b6ca8" stroke-width="2"/>
+<text x="622" y="52" fill="#333">laggard</text>
+<path d="M95.0 312.0 L115.6 312.0 L167.2 40.0 L270.4 40.0 L580.0 40.0" fill="none" stroke="#d1495b" stroke-width="2" stroke-dasharray="6 4"/>
+<line x1="594" x2="616" y1="68" y2="68" stroke="#d1495b" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="622" y="72" fill="#333">last-arriver blame</text>
+<path d="M95.0 312.0 L115.6 312.0 L167.2 312.0 L270.4 312.0 L580.0 40.0" fill="none" stroke="#2e8b57" stroke-width="2" stroke-dasharray="6 4"/>
+<line x1="594" x2="616" y1="88" y2="88" stroke="#2e8b57" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="622" y="92" fill="#333">NVRx-style 0.7</text>
+<path d="M95.0 312.0 L115.6 40.0 L167.2 40.0 L270.4 40.0 L580.0 40.0" fill="none" stroke="#e09f3e" stroke-width="2" stroke-dasharray="6 4"/>
+<line x1="594" x2="616" y1="108" y2="108" stroke="#e09f3e" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="622" y="112" fill="#333">NVRx-style cal. 300 s</text>
+<path d="M95.0 266.7 L115.6 40.0 L167.2 40.0 L270.4 40.0 L580.0 40.0" fill="none" stroke="#6c4f9c" stroke-width="2" stroke-dasharray="6 4"/>
+<line x1="594" x2="616" y1="128" y2="128" stroke="#6c4f9c" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="622" y="132" fill="#333">NVRx-style cal. 30 s</text>
+</svg>
