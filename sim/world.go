@@ -56,7 +56,7 @@ func Default() Config {
 		HiccupP: 0.003, HiccupMean: 0.060,
 		CongestP:        0.01,
 		CheckpointEvery: 500, CheckpointPause: 3,
-		Silicon:     0.015,
+		Silicon:     0.01,
 		ClockOffset: 0.005, ClockDrift: 20e-6,
 	}
 }
