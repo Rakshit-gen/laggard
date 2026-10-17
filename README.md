@@ -45,7 +45,7 @@ By kind of fault, laggard caught 97% of slow GPUs, 100% of slow NICs, 94% of slo
 
 ![Slow GPUs caught on the right node, by slowdown](results/gpu-catch.svg)
 
-The slow-NIC example shows why reading step time isn't enough. At 2/3 speed the NIC barely moves the step time. laggard named it one step after it slowed down. None of the baselines raised an alarm in 500 steps.
+The slow-NIC example shows why reading step time isn't enough. At 2/3 speed the NIC barely moves the step time. laggard named it one step after it slowed down. None of the baselines raised an alarm in the 600 steps after.
 
 ![A NIC at 2/3 speed from step 800](results/example.svg)
 
@@ -66,6 +66,28 @@ Draining on the first alarm is worse than never draining. Most of what gets caug
 
 Full tables: [detection](results/detection.md), [ablation](results/ablation.md), [draining](results/decision.md), [example](results/example.md), [cost](results/bench.md).
 
+## Measured vs claimed
+
+| claim | number | where it comes from |
+|---|---|---|
+| slowdowns caught on the right node | 98% (82 of 84) | `laggard detect`, results/detection.md |
+| median steps to catch | 3 | same |
+| false alarms on 32 healthy runs | 0 | same |
+| slow NICs found without the intersection rule | 29%, down from 100% | `laggard ablate`, results/ablation.md |
+| regret against the oracle, 120 s restart | 0.45% | `laggard decide`, results/decision.md |
+| replay estimate vs true job cost, GPU at 1.5x | 0.172 vs 0.165 s per step | `TestExcessIsTheJobsCost` in locate/ |
+| time to read a 4096-GPU step | 3.4 ms | `laggard bench`, results/bench.md |
+
+Everything is simulated. None of these numbers come from a real cluster.
+
+## Limitations
+
+- **The simulator is mine.** It has the noise I thought of. A real job has more kinds, and the thresholds would have to be set on its own healthy runs.
+- **Three kinds of component.** A slow NVLink or a whole slow switch isn't modeled. A switch would make many NICs slow at once, and the intersection rule would blame none of them.
+- **Blocking collectives only.** With communication overlapped with compute, the gaps between operations stop being compute and the replay is wrong.
+- **One fault at a time.** Two slow parts on different nodes are found and drained one restart at a time.
+- **A GPU born more than 5% slow gets flagged.** That's the cap on the learned normal. Set it from the spread of your own hardware.
+
 ## Usage
 
 Run the simulator end to end and write every table and chart:
@@ -74,7 +96,7 @@ Run the simulator end to end and write every table and chart:
 go run ./cmd/laggard all -out results
 ```
 
-The commands one at a time are `detect`, `ablate`, `decide`, `example` and `bench`. `all` takes about two minutes on an M4.
+The commands one at a time are `detect`, `ablate`, `decide`, `example` and `bench`. `all` takes about five minutes on an M4.
 
 Read a trace and get alarms and drain decisions:
 
