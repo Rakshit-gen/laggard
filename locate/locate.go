@@ -47,6 +47,19 @@ type Alarm struct {
 	Age    int     // steps since the alarm went up
 }
 
+// Idea is one part of the method that can be switched off.
+type Idea uint8
+
+const (
+	// PeerGroups compares a GPU with its TP peers rather than every GPU.
+	PeerGroups Idea = 1 << iota
+	// Intersect blames a NIC only when all of its groups are slow, rather
+	// than whenever its DP group is.
+	Intersect
+	// Polish removes replica and stage effects before comparing nodes.
+	Polish
+)
+
 // Families of evidence. Each has its own threshold.
 const (
 	FamGPU = iota
@@ -81,6 +94,8 @@ type Config struct {
 	Quiet float64
 	// Thresholds per family: GPU, node, NIC.
 	Thresholds [Families]float64
+	// Without switches ideas off, for measuring what each one is worth.
+	Without Idea
 	// Restart is what one restart costs the job, in seconds of job time.
 	// Zero means drain as soon as an alarm goes up.
 	Restart float64
@@ -292,6 +307,15 @@ func (l *Localizer) Observe(st *trace.Step) {
 			l.gpu.resid[r] = math.Log(l.comp[r]) - m
 		}
 	}
+	if l.cfg.Without&PeerGroups != 0 {
+		for r := range l.gpu.resid {
+			l.gpu.resid[r] = math.Log(l.comp[r])
+		}
+		m := median(slices.Clone(l.gpu.resid))
+		for r := range l.gpu.resid {
+			l.gpu.resid[r] -= m
+		}
+	}
 	l.gpu.update(&l.cfg)
 
 	// Node: the median rank's compute per node, which one slow GPU doesn't
@@ -299,22 +323,13 @@ func (l *Localizer) Observe(st *trace.Step) {
 	// layers, so remove a replica effect and a stage effect first (one pass
 	// of median polish) and look at what's left.
 	copy(l.node.resid, l.nodeLog)
-	for d := range t.D {
-		row := l.node.resid[d*t.S : (d+1)*t.S]
-		m := median(append(l.tmp[:0], row...))
-		for s := range row {
-			row[s] -= m
+	if l.cfg.Without&Polish != 0 {
+		m := median(slices.Clone(l.nodeLog))
+		for n := range l.node.resid {
+			l.node.resid[n] -= m
 		}
-	}
-	for s := range t.S {
-		v := l.tmp[:t.D]
-		for d := range t.D {
-			v[d] = l.node.resid[d*t.S+s]
-		}
-		m := median(v)
-		for d := range t.D {
-			l.node.resid[d*t.S+s] -= m
-		}
+	} else {
+		l.polish()
 	}
 	l.node.update(&l.cfg)
 
@@ -347,6 +362,29 @@ func (l *Localizer) Observe(st *trace.Step) {
 	l.judge()
 }
 
+// polish removes a replica effect and a stage effect from the node
+// residuals, one pass of median polish.
+func (l *Localizer) polish() {
+	t := l.topo
+	for d := range t.D {
+		row := l.node.resid[d*t.S : (d+1)*t.S]
+		m := median(append(l.tmp[:0], row...))
+		for s := range row {
+			row[s] -= m
+		}
+	}
+	for s := range t.S {
+		v := l.tmp[:t.D]
+		for d := range t.D {
+			v[d] = l.node.resid[d*t.S+s]
+		}
+		m := median(v)
+		for d := range t.D {
+			l.node.resid[d*t.S+s] -= m
+		}
+	}
+}
+
 // judge turns CUSUM states into alarms and accumulates their cost.
 func (l *Localizer) judge() {
 	l.alarms = l.alarms[:0]
@@ -376,6 +414,10 @@ func (l *Localizer) judge() {
 	for r := range l.nicSc {
 		d, s, g := t.Coords(r)
 		sc := l.dp.s[t.DPGroup(s, g)]
+		if l.cfg.Without&Intersect != 0 {
+			l.nicSc[r] = sc
+			continue
+		}
 		if s > 0 {
 			sc = min(sc, l.pp.s[t.PPLink(d, s-1, g)])
 		}
@@ -406,7 +448,7 @@ func (l *Localizer) judge() {
 	check(FamGPU, GPU, l.gpu.s, t.Node, gpuSec)
 	check(FamNode, Node, l.node.s, func(n int) int { return n }, nodeSec)
 	check(FamNIC, NIC, l.nicSc, t.Node, nicSec)
-	slices.SortFunc(l.alarms, func(a, b Alarm) int {
+	slices.SortStableFunc(l.alarms, func(a, b Alarm) int {
 		if a.Score > b.Score {
 			return -1
 		}
