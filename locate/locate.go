@@ -72,8 +72,12 @@ type Config struct {
 	// GPU that was already bad at job start get caught.
 	MaxNative float64
 	// Adapt is how quickly the normal level follows slow drift, per step,
-	// while a component is under no suspicion.
+	// while a component's statistic is below Quiet.
 	Adapt float64
+	// Quiet is the statistic below which a component counts as unsuspected.
+	// Gating on exactly zero would be wrong: the statistic only touches zero
+	// after below-normal steps, so the learned level would drift low.
+	Quiet float64
 	// Thresholds per family: GPU, node, NIC.
 	Thresholds [Families]float64
 	// Restart is what one restart costs the job, in seconds of job time.
@@ -85,11 +89,12 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Warmup:     50,
-		K:          0.5,
+		Warmup:     100,
+		K:          1,
 		Clip:       4,
 		MaxNative:  math.Log(1.05),
 		Adapt:      0.002,
+		Quiet:      5,
 		Thresholds: [Families]float64{20, 20, 20},
 	}
 }
@@ -154,7 +159,7 @@ func (f *family) update(c *Config) {
 	for i, r := range f.resid {
 		z := max(-c.Clip, min(c.Clip, (r-f.mu[i])/f.sigma))
 		f.s[i] = max(0, f.s[i]+z-c.K)
-		if f.s[i] == 0 {
+		if f.s[i] < c.Quiet {
 			f.mu[i] = min(f.mu[i]+c.Adapt*(r-f.mu[i]), c.MaxNative)
 		}
 	}
@@ -434,3 +439,4 @@ func median(v []float64) float64 {
 	}
 	return (v[n/2-1] + v[n/2]) / 2
 }
+
