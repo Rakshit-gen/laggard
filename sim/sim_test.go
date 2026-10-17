@@ -27,3 +27,13 @@ func TestDetectionQuick(t *testing.T) {
 		t.Logf("%v %.2f start %d end %d caught %v wrong %v delay %d kind %v", v.Fault.Kind, v.Fault.Factor, v.Fault.Start, v.Fault.End, v.Caught, v.WrongFirst, v.Delay, v.KindRight)
 	}
 }
+
+func TestDecisionQuick(t *testing.T) {
+	cfg := Default()
+	for _, r := range []float64{120, 600} {
+		rep := Decision(cfg, r, Healthy(1000, 12, 3000), Faulty(cfg, 3000, 2, 3000))
+		for _, row := range rep.Rows {
+			t.Logf("R=%.0f %-36s loss %5.2f%% regret %5.2f%% evict %d wrong %d transient %d", r, row.Name, 100*row.Loss, 100*row.Regret, row.Evictions, row.Wrong, row.Transient)
+		}
+	}
+}

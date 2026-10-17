@@ -16,14 +16,14 @@ type Contender struct {
 	Calibrate bool // set thresholds from healthy runs; otherwise keep defaults
 }
 
-// Contenders is the line-up every experiment uses. restart is passed to
-// laggard's ski-rental rule; the baselines evict as soon as they alarm.
-func Contenders(cfg Config, restart float64) []Contender {
+// Contenders is the line-up every experiment uses. restart and steps go to
+// laggard's drain rule; the baselines drain as soon as they alarm.
+func Contenders(cfg Config, restart float64, steps int) []Contender {
 	t := cfg.Topo
 	return []Contender{
 		{"laggard", func() Detector {
 			c := locate.DefaultConfig()
-			c.Restart = restart
+			c.Restart, c.Steps, c.Patience = restart, steps, Patience
 			return Laggard{locate.New(t, c), "laggard"}
 		}, true},
 		{"step-time alert", func() Detector { return baseline.NewStepTime() }, true},
@@ -66,6 +66,10 @@ func Calibrated(cfg Config, cs []Contender, healthy []Episode) ([]func() Detecto
 	}
 	return mks, hs
 }
+
+// Patience is how long laggard waits out an alarm before draining. The
+// simulated transient slowdowns last at most 40 steps.
+const Patience = 50
 
 // Verdict is how one detector did on one faulty episode.
 type Verdict struct {
@@ -123,7 +127,7 @@ type DetectionReport struct {
 // Detection calibrates every contender on one set of healthy jobs, then
 // watches fresh healthy jobs and one-fault jobs.
 func Detection(cfg Config, calib, healthy, faulty []Episode) *DetectionReport {
-	cs := Contenders(cfg, 0)
+	cs := Contenders(cfg, 0, 0)
 	mks, hs := Calibrated(cfg, cs, calib)
 	rep := &DetectionReport{Thresholds: hs, Verdicts: make([][]Verdict, len(cs)), HealthyAlarms: make([]int, len(cs))}
 	for _, c := range cs {
@@ -205,16 +209,24 @@ type DecisionReport struct {
 // The step-time alert can't name a node, so it isn't in this one.
 func Decision(cfg Config, restart float64, calib, eps []Episode) *DecisionReport {
 	var cs []Contender
-	for _, c := range Contenders(cfg, restart) {
+	for _, c := range Contenders(cfg, restart, eps[0].Steps) {
 		if c.Name != "step-time alert" {
 			cs = append(cs, c)
 		}
 	}
-	// laggard with its alarm acted on at once, to separate what the
-	// break-even rule adds from what the detector adds.
-	cs = append(cs[:1], append([]Contender{{"laggard, drain on first alarm", func() Detector {
-		return Laggard{locate.New(cfg.Topo, locate.DefaultConfig()), "laggard, drain on first alarm"}
-	}, true}}, cs[1:]...)...)
+	// laggard with other drain rules, to separate what the rule adds from
+	// what the detector adds.
+	variant := func(name string, set func(*locate.Config)) Contender {
+		return Contender{name, func() Detector {
+			c := locate.DefaultConfig()
+			set(&c)
+			return Laggard{locate.New(cfg.Topo, c), name}
+		}, true}
+	}
+	cs = append(cs[:1], append([]Contender{
+		variant("laggard, ski rental only", func(c *locate.Config) { c.Restart = restart }),
+		variant("laggard, drain on first alarm", func(c *locate.Config) {}),
+	}, cs[1:]...)...)
 	mks, _ := Calibrated(cfg, cs, calib)
 
 	type res struct {
