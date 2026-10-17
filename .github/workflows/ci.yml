@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          # No dependencies, so no go.sum to key a cache on.
+          cache: false
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: watch an exported trace
+        run: go run ./cmd/laggard export -steps 300 -fault gpu:70:1.5:150 | go run ./cmd/laggard watch -steps 3000 | tee /dev/stderr | grep -q "GPU 70 on node 8"
