@@ -282,7 +282,9 @@ func (l *Localizer) Observe(st *trace.Step) {
 		for j, r := range op.Ranks {
 			gap := 0.0
 			if l.seen[r] {
-				gap = op.Enter[j] - l.lastExit[r]
+				// Negative only if the trace has a rank's ops out of order;
+				// count it as no compute rather than let it go negative.
+				gap = max(0, op.Enter[j]-l.lastExit[r])
 				l.comp[r] += gap
 			}
 			l.gap = append(l.gap, gap)
@@ -311,17 +313,17 @@ func (l *Localizer) Observe(st *trace.Step) {
 	for n, members := range l.tp {
 		v := l.tmp[:len(members)]
 		for j, r := range members {
-			v[j] = math.Log(l.comp[r])
+			v[j] = lg(l.comp[r])
 		}
 		m := median(v)
 		l.nodeLog[n] = m
 		for _, r := range members {
-			l.gpu.resid[r] = math.Log(l.comp[r]) - m
+			l.gpu.resid[r] = lg(l.comp[r]) - m
 		}
 	}
 	if l.cfg.Without&PeerGroups != 0 {
 		for r := range l.gpu.resid {
-			l.gpu.resid[r] = math.Log(l.comp[r])
+			l.gpu.resid[r] = lg(l.comp[r])
 		}
 		m := median(slices.Clone(l.gpu.resid))
 		for r := range l.gpu.resid {
@@ -350,12 +352,12 @@ func (l *Localizer) Observe(st *trace.Step) {
 	for s := range t.S {
 		v := l.tmp[:t.G]
 		for g := range t.G {
-			v[g] = math.Log(l.dpX[t.DPGroup(s, g)])
+			v[g] = lg(l.dpX[t.DPGroup(s, g)])
 		}
 		m := median(v)
 		for g := range t.G {
 			i := t.DPGroup(s, g)
-			l.dp.resid[i] = math.Log(l.dpX[i]) - m
+			l.dp.resid[i] = lg(l.dpX[i]) - m
 		}
 	}
 	l.dp.update(&l.cfg)
@@ -363,11 +365,11 @@ func (l *Localizer) Observe(st *trace.Step) {
 	if t.S > 1 {
 		v := l.tmp[:len(l.ppX)]
 		for i, x := range l.ppX {
-			v[i] = math.Log(x)
+			v[i] = lg(x)
 		}
 		m := median(v)
 		for i, x := range l.ppX {
-			l.pp.resid[i] = math.Log(x) - m
+			l.pp.resid[i] = lg(x) - m
 		}
 		l.pp.update(&l.cfg)
 	}
@@ -491,7 +493,7 @@ func (l *Localizer) judge() {
 
 	check := func(fam int, tg Target, scores []float64, node func(int) int, sec func(int) float64) {
 		for i, sc := range scores {
-			if sc < h[fam] {
+			if !(sc >= h[fam]) { // a NaN never counts as an alarm
 				if sc == 0 {
 					l.loss[fam][i], l.rate[fam][i], l.age[fam][i] = 0, 0, 0
 				}
@@ -560,6 +562,9 @@ func (l *Localizer) Scores() []float64 {
 	}
 	return []float64{slices.Max(l.gpu.s), slices.Max(l.node.s), slices.Max(l.nicSc)}
 }
+
+// lg is a log that stays finite for a rank with no measurable compute.
+func lg(x float64) float64 { return math.Log(max(x, 1e-9)) }
 
 // median reorders v.
 func median(v []float64) float64 {
