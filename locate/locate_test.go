@@ -67,3 +67,18 @@ func TestSlowNICAtPipelineEnds(t *testing.T) {
 		expect(t, l, locate.NIC, r, top.Node(r))
 	}
 }
+
+// When every GPU on a host slows together, TP peers can't see it: they're
+// all equally slow. The node comparison must.
+func TestSlowNode(t *testing.T) {
+	n := sim.Default().Topo.TPGroup(2, 3)
+	l := watch(t, 220, []sim.Fault{{Kind: sim.SlowNode, Where: n, Factor: 1.1, Start: 150}}, nil)
+	expect(t, l, locate.Node, n, n)
+}
+
+func TestHealthyStaysQuiet(t *testing.T) {
+	l := watch(t, 1500, nil, nil)
+	if a, ok := l.Alarm(); ok {
+		t.Fatalf("alarm on a healthy job: %+v, scores %v", a, l.Scores())
+	}
+}
