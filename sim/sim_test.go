@@ -6,7 +6,7 @@ import (
 
 func TestDetectionQuick(t *testing.T) {
 	cfg := Default()
-	rep := Detection(cfg, Healthy(1000, 12, 3000), Healthy(2000, 8, 3000), Faulty(cfg, 3000, 3, 3000))
+	rep := Detection(cfg, Contenders(cfg, 0, 0), Healthy(1000, 12, 3000), Healthy(2000, 8, 3000), Faulty(cfg, 3000, 3, 3000))
 	for i, n := range rep.Names {
 		caught, wrong, unl, fa := 0, 0, 0, 0
 		for _, v := range rep.Verdicts[i] {

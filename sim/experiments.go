@@ -71,6 +71,25 @@ func Calibrated(cfg Config, cs []Contender, healthy []Episode) ([]func() Detecto
 // simulated transient slowdowns last at most 40 steps.
 const Patience = 50
 
+// Ablations is laggard with one idea switched off at a time.
+func Ablations(cfg Config) []Contender {
+	variant := func(name string, set func(*locate.Config)) Contender {
+		return Contender{name, func() Detector {
+			c := locate.DefaultConfig()
+			set(&c)
+			return Laggard{locate.New(cfg.Topo, c), name}
+		}, true}
+	}
+	return []Contender{
+		variant("laggard", func(*locate.Config) {}),
+		variant("GPU against every GPU, not its TP peers", func(c *locate.Config) { c.Without |= locate.PeerGroups }),
+		variant("NIC blamed whenever its DP group is slow", func(c *locate.Config) { c.Without |= locate.Intersect }),
+		variant("nodes compared without removing replica and stage effects", func(c *locate.Config) { c.Without |= locate.Polish }),
+		variant("no cap on a step's contribution", func(c *locate.Config) { c.Clip = math.Inf(1) }),
+		variant("no cap on a learned normal", func(c *locate.Config) { c.MaxNative = math.Inf(1) }),
+	}
+}
+
 // Verdict is how one detector did on one faulty episode.
 type Verdict struct {
 	Fault       Fault
@@ -126,8 +145,7 @@ type DetectionReport struct {
 
 // Detection calibrates every contender on one set of healthy jobs, then
 // watches fresh healthy jobs and one-fault jobs.
-func Detection(cfg Config, calib, healthy, faulty []Episode) *DetectionReport {
-	cs := Contenders(cfg, 0, 0)
+func Detection(cfg Config, cs []Contender, calib, healthy, faulty []Episode) *DetectionReport {
 	mks, hs := Calibrated(cfg, cs, calib)
 	rep := &DetectionReport{Thresholds: hs, Verdicts: make([][]Verdict, len(cs)), HealthyAlarms: make([]int, len(cs))}
 	for _, c := range cs {

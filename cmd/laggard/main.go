@@ -142,7 +142,7 @@ var groups = []string{"slow GPU", "slow NIC", "slow node", "transient GPU"}
 func detect(dir string) {
 	cfg := sim.Default()
 	faulty := sim.Faulty(cfg, faultySeed, detectReps, steps)
-	rep := sim.Detection(cfg, sim.Healthy(calibSeed, calibRuns, steps), sim.Healthy(healthySeed, healthyRuns, steps), faulty)
+	rep := sim.Detection(cfg, sim.Contenders(cfg, 0, 0), sim.Healthy(calibSeed, calibRuns, steps), sim.Healthy(healthySeed, healthyRuns, steps), faulty)
 
 	var b strings.Builder
 	t := cfg.Topo
