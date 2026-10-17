@@ -1,3 +1,4 @@
 /laggard
 *.test
 *.prof
+results/.log
