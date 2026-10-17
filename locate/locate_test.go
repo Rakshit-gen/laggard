@@ -203,3 +203,26 @@ func TestExcessIsTheJobsCost(t *testing.T) {
 		}
 	}
 }
+
+// A trace with one rank's ops out of order must not poison the scores.
+func TestOutOfOrderTraceStaysFinite(t *testing.T) {
+	cfg := sim.Default()
+	l := locate.New(cfg.Topo, locate.DefaultConfig())
+	w := sim.NewWorld(cfg, 4, nil)
+	for i := range 300 {
+		st := w.Step()
+		if i == 200 {
+			op := &st.Ops[5]
+			op.Enter[0], op.Exit[0] = -1e6, -1e6
+		}
+		l.Observe(st)
+	}
+	for _, s := range l.Scores() {
+		if s != s {
+			t.Fatalf("NaN score %v", l.Scores())
+		}
+	}
+	if a, ok := l.Alarm(); ok {
+		t.Fatalf("one bad record raised an alarm: %+v", a)
+	}
+}
