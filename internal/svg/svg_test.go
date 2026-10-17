@@ -47,3 +47,19 @@ func TestNiceStep(t *testing.T) {
 		}
 	}
 }
+
+func TestFractionalAxisLabels(t *testing.T) {
+	c := Chart{XMin: 1, XMax: 1.5, YMin: 0, YMax: 1, Series: []Series{{Name: "a", X: []float64{1, 1.5}, Y: []float64{0, 1}}}}
+	var b strings.Builder
+	if err := c.Write(&b); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "0000000") {
+		t.Fatal("float error leaked into an axis label")
+	}
+	for _, want := range []string{">1.1<", ">1.2<", ">1.5<"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("missing label %s", want)
+		}
+	}
+}

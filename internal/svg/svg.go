@@ -66,8 +66,12 @@ func (c *Chart) Write(w io.Writer) error {
 		fmt.Fprintf(&b, `<text x="%d" y="%.1f" text-anchor="end" fill="#666">%s</text>`+"\n", left-6, sy(y)+4, label)
 	}
 	step := niceStep((c.XMax - c.XMin) / 8)
-	for x := math.Ceil(c.XMin/step) * step; x <= c.XMax+1e-9; x += step {
-		fmt.Fprintf(&b, `<text x="%.1f" y="%.1f" text-anchor="middle" fill="#666">%g</text>`+"\n", sx(x), top+ph+16, x)
+	// Enough decimals for the step and no more, so accumulated float error
+	// never reaches a label.
+	dec := max(0, int(-math.Floor(math.Log10(step))))
+	for i := math.Ceil(c.XMin / step); i*step <= c.XMax+1e-9; i++ {
+		x := i * step
+		fmt.Fprintf(&b, `<text x="%.1f" y="%.1f" text-anchor="middle" fill="#666">%.*f</text>`+"\n", sx(x), top+ph+16, dec, x)
 	}
 	fmt.Fprintf(&b, `<text x="%.1f" y="%d" text-anchor="middle" fill="#444">%s</text>`+"\n", left+pw/2, height-10, esc(c.XLabel))
 	fmt.Fprintf(&b, `<text transform="translate(16 %.1f) rotate(-90)" text-anchor="middle" fill="#444">%s</text>`+"\n", top+ph/2, esc(c.YLabel))
