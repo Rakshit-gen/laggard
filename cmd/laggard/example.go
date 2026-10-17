@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/Rakshit-gen/laggard/internal/svg"
@@ -26,7 +27,7 @@ func example(dir string) {
 	first := make([]string, len(dets))
 	var xs, ys []float64
 	prev := 0.0
-	for range 1400 {
+	for range 1500 {
 		st := w.Step()
 		now := w.Now()
 		xs, ys = append(xs, float64(st.Index)), append(ys, now-prev)
@@ -60,7 +61,18 @@ func example(dir string) {
 	b.WriteString("\n")
 	emit(dir, "example.md", b.String())
 
-	ch := svg.Chart{Title: "Step time, NIC slows to 2/3 speed at step 800", XLabel: "step", YLabel: "seconds per step", XMin: 600, XMax: 1000, YMin: 0.8, YMax: 1.2,
-		Series: []svg.Series{{Name: "step time", X: xs, Y: ys}}, Marks: []svg.Mark{{X: 800, Label: "NIC slows"}}}
+	// The slow NIC costs the job about 5%, well inside step-to-step noise.
+	// A trailing 50-step median shows the shift that's there.
+	med := make([]float64, len(ys))
+	for i := range ys {
+		med[i] = math.NaN()
+		if i >= 50 {
+			w := slices.Clone(ys[i-49 : i+1])
+			slices.Sort(w)
+			med[i] = (w[24] + w[25]) / 2
+		}
+	}
+	ch := svg.Chart{Title: "A NIC at 2/3 speed from step 800: nothing to see in step time", XLabel: "step", YLabel: "seconds per step", XMin: 500, XMax: 1300, YMin: 0.85, YMax: 1.15,
+		Series: []svg.Series{{Name: "step time", X: xs, Y: ys}, {Name: "50-step median", X: xs, Y: med}}, Marks: []svg.Mark{{X: 800, Label: "NIC slows"}}}
 	writeFile(dir, "example.svg", ch.Write)
 }
