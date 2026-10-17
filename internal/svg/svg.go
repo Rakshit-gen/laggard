@@ -56,9 +56,10 @@ func (c *Chart) Write(w io.Writer) error {
 	fmt.Fprintf(&b, `<rect width="100%%" height="100%%" fill="#ffffff"/>`+"\n")
 	fmt.Fprintf(&b, `<text x="%d" y="22" font-size="14" font-weight="600" fill="#222">%s</text>`+"\n", left, esc(c.Title))
 
+	ydec := max(0, int(-math.Floor(math.Log10((c.YMax-c.YMin)/5))))
 	for i := 0; i <= 5; i++ {
 		y := c.YMin + (c.YMax-c.YMin)*float64(i)/5
-		label := fmt.Sprintf("%.2g", y)
+		label := fmt.Sprintf("%.*f", ydec, y)
 		if c.YPercent {
 			label = fmt.Sprintf("%.0f%%", 100*y)
 		}
