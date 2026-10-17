@@ -42,7 +42,7 @@ type Alarm struct {
 	Where  int
 	Node   int     // the node to drain to get rid of it, -1 if unknown
 	Score  float64 // how far past its threshold, 1 = just crossed
-	Excess float64 // seconds per step it's costing, smoothed since the alarm went up
+	Excess float64 // seconds per step it's costing, over the last few steps
 	Loss   float64 // seconds it's estimated to have cost since the alarm went up
 	Age    int     // steps since the alarm went up
 }
@@ -396,9 +396,10 @@ func (l *Localizer) judge() {
 			x := max(0, sec(i))
 			l.loss[fam][i] += x
 			l.age[fam][i]++
-			// A running mean while the alarm is young, then slower
-			// smoothing, so a few noisy steps don't swing the decision.
-			l.rate[fam][i] += (x - l.rate[fam][i]) / float64(min(l.age[fam][i], 20))
+			// The cost per step follows only the last few steps. The
+			// statistic takes a while to drain after a slowdown ends, and
+			// the decision must see the slowdown gone before the alarm is.
+			l.rate[fam][i] += (x - l.rate[fam][i]) / float64(min(l.age[fam][i], 5))
 			l.alarms = append(l.alarms, Alarm{Target: tg, Where: i, Node: node(i), Score: sc / h[fam], Excess: l.rate[fam][i], Loss: l.loss[fam][i], Age: l.age[fam][i]})
 		}
 	}
