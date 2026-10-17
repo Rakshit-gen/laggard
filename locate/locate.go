@@ -42,8 +42,9 @@ type Alarm struct {
 	Where  int
 	Node   int     // the node to drain to get rid of it, -1 if unknown
 	Score  float64 // how far past its threshold, 1 = just crossed
-	Excess float64 // seconds of the last step it's estimated to have cost
+	Excess float64 // seconds per step it's costing, smoothed since the alarm went up
 	Loss   float64 // seconds it's estimated to have cost since the alarm went up
+	Age    int     // steps since the alarm went up
 }
 
 // Families of evidence. Each has its own threshold.
@@ -81,10 +82,20 @@ type Config struct {
 	// Thresholds per family: GPU, node, NIC.
 	Thresholds [Families]float64
 	// Restart is what one restart costs the job, in seconds of job time.
-	// An alarm leads to eviction once the slowdown it has caused since it
-	// went up reaches this, the break-even rule from ski rental. Zero means
-	// evict as soon as the alarm goes up.
+	// Zero means drain as soon as an alarm goes up.
 	Restart float64
+	// Steps is how many steps the job has left to run when the Localizer
+	// starts, 0 if unknown. With it, an alarm that has lasted Patience
+	// steps leads to a drain when its current cost per step, over the
+	// steps that remain, adds up to more than a restart. Without it, the
+	// drain happens once the alarm has cost a restart's worth, the
+	// break-even rule from ski rental, which never pays more than twice
+	// what the best choice in hindsight would have.
+	Steps int
+	// Patience is how many steps an alarm must last before a drain is
+	// considered. Set it past how long transient slowdowns usually last
+	// on your fleet, so they're waited out.
+	Patience int
 }
 
 func DefaultConfig() Config {
@@ -184,6 +195,9 @@ type Localizer struct {
 	pp     *family // per PP link: transfer time vs other links
 	nicSc  []float64
 	loss   [Families][]float64 // accumulated excess per alarmed entity
+	rate   [Families][]float64 // smoothed excess per step
+	age    [Families][]int
+	steps  int // observed since the last reset
 	alarms []Alarm
 
 	lastExit []float64
@@ -208,9 +222,9 @@ func New(topo trace.Topology, cfg Config) *Localizer {
 		comp: make([]float64, n), dpX: make([]float64, topo.DPGroups()), ppX: make([]float64, topo.PPLinks()),
 		nodeLog: make([]float64, topo.Nodes()), tmp: make([]float64, max(topo.G, topo.D, topo.S, topo.PPLinks())),
 	}
-	l.loss[FamGPU] = make([]float64, n)
-	l.loss[FamNode] = make([]float64, topo.Nodes())
-	l.loss[FamNIC] = make([]float64, n)
+	for i, m := range [Families]int{n, topo.Nodes(), n} {
+		l.loss[i], l.rate[i], l.age[i] = make([]float64, m), make([]float64, m), make([]int, m)
+	}
 	return l
 }
 
@@ -224,6 +238,8 @@ func (l *Localizer) Reset() {
 	}
 	for i := range l.loss {
 		clear(l.loss[i])
+		clear(l.rate[i])
+		clear(l.age[i])
 	}
 	clear(l.seen)
 	clear(l.nicSc)
@@ -233,6 +249,7 @@ func (l *Localizer) Reset() {
 // Observe takes one step's trace.
 func (l *Localizer) Observe(st *trace.Step) {
 	t := l.topo
+	l.steps++
 	clear(l.comp)
 	clear(l.ppX)
 	first := !l.seen[0]
@@ -372,13 +389,17 @@ func (l *Localizer) judge() {
 		for i, sc := range scores {
 			if sc < h[fam] {
 				if sc == 0 {
-					l.loss[fam][i] = 0
+					l.loss[fam][i], l.rate[fam][i], l.age[fam][i] = 0, 0, 0
 				}
 				continue
 			}
-			x := sec(i)
-			l.loss[fam][i] += max(0, x)
-			l.alarms = append(l.alarms, Alarm{Target: tg, Where: i, Node: node(i), Score: sc / h[fam], Excess: x, Loss: l.loss[fam][i]})
+			x := max(0, sec(i))
+			l.loss[fam][i] += x
+			l.age[fam][i]++
+			// A running mean while the alarm is young, then slower
+			// smoothing, so a few noisy steps don't swing the decision.
+			l.rate[fam][i] += (x - l.rate[fam][i]) / float64(min(l.age[fam][i], 20))
+			l.alarms = append(l.alarms, Alarm{Target: tg, Where: i, Node: node(i), Score: sc / h[fam], Excess: l.rate[fam][i], Loss: l.loss[fam][i], Age: l.age[fam][i]})
 		}
 	}
 	check(FamGPU, GPU, l.gpu.s, t.Node, gpuSec)
@@ -411,7 +432,15 @@ func (l *Localizer) Alarm() (Alarm, bool) {
 // than a restart would.
 func (l *Localizer) Evict() (int, bool) {
 	for _, a := range l.alarms {
-		if a.Loss >= l.cfg.Restart {
+		c := &l.cfg
+		if c.Steps == 0 {
+			if a.Loss >= c.Restart {
+				return a.Node, true
+			}
+			continue
+		}
+		left := c.Steps - l.steps
+		if a.Age >= c.Patience && a.Excess*float64(left) > c.Restart {
 			return a.Node, true
 		}
 	}
@@ -439,4 +468,3 @@ func median(v []float64) float64 {
 	}
 	return (v[n/2-1] + v[n/2]) / 2
 }
-
