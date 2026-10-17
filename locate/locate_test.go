@@ -162,8 +162,44 @@ func TestNoDrainWhenTooLateToPayOff(t *testing.T) {
 func TestSkiRentalWithoutHorizon(t *testing.T) {
 	f := sim.Fault{Kind: sim.SlowGPU, Where: 17, Factor: 1.5, Start: 150}
 	at := firstDrain(t, 3000, f, func(c *locate.Config) { c.Restart = 30 })
-	// About 0.25 s of excess compute per step, so 30 s takes ~120 steps.
-	if at < f.Start+90 || at > f.Start+160 {
+	// A 1.5x GPU costs this job about 0.17 s a step, so 30 s takes ~180.
+	if at < f.Start+130 || at > f.Start+240 {
 		t.Fatalf("drained at step %d", at)
+	}
+}
+
+// The cost an alarm reports must be what the job actually loses, not the
+// component's own extra seconds: in a noisy job a small slowdown hides
+// behind noise that's already on the critical path.
+func TestExcessIsTheJobsCost(t *testing.T) {
+	cfg := sim.Default()
+	for _, f := range []sim.Fault{
+		{Kind: sim.SlowGPU, Where: 70, Factor: 1.1, Start: 150},
+		{Kind: sim.SlowGPU, Where: 70, Factor: 1.5, Start: 150},
+		{Kind: sim.SlowNIC, Where: 77, Factor: 2, Start: 150},
+		{Kind: sim.SlowNode, Where: 9, Factor: 1.2, Start: 150},
+	} {
+		l := locate.New(cfg.Topo, locate.DefaultConfig())
+		w := sim.NewWorld(cfg, 11, []sim.Fault{f})
+		ref := sim.NewWorld(cfg, 11, nil)
+		var est, n float64
+		var t0, r0 float64
+		for i := range 1150 {
+			l.Observe(w.Step())
+			ref.Step()
+			if i == 149 {
+				t0, r0 = w.Now(), ref.Now()
+			}
+			if a, ok := l.Alarm(); ok && i >= 150 {
+				est += a.Excess
+				n++
+			}
+		}
+		truth := ((w.Now() - t0) - (ref.Now() - r0)) / 1000
+		got := est / n
+		t.Logf("%v %.2fx: estimated %.4f s/step, true %.4f", f.Kind, f.Factor, got, truth)
+		if got < truth*0.7-0.002 || got > truth*1.3+0.002 {
+			t.Errorf("%v %.2fx: estimated %.4f s/step, true %.4f", f.Kind, f.Factor, got, truth)
+		}
 	}
 }
