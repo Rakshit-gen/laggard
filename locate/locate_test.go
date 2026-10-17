@@ -82,3 +82,34 @@ func TestHealthyStaysQuiet(t *testing.T) {
 		t.Fatalf("alarm on a healthy job: %+v, scores %v", a, l.Scores())
 	}
 }
+
+// Shifting one host's clock must change nothing: the localizer only ever
+// subtracts two times read from the same clock.
+func TestClockOffsetsDontMatter(t *testing.T) {
+	cfg := sim.Default()
+	top := cfg.Topo
+	w := sim.NewWorld(cfg, 9, []sim.Fault{{Kind: sim.SlowNIC, Where: top.Rank(1, 1, 1), Factor: 1.3, Start: 120}})
+	a := locate.New(top, locate.DefaultConfig())
+	b := locate.New(top, locate.DefaultConfig())
+	skewed := top.Node(top.Rank(1, 2, 0))
+	for range 200 {
+		st := w.Step()
+		a.Observe(st)
+		for i := range st.Ops {
+			op := &st.Ops[i]
+			for j, r := range op.Ranks {
+				if top.Node(int(r)) == skewed {
+					op.Enter[j] += 0.25
+					op.Exit[j] += 0.25
+				}
+			}
+		}
+		b.Observe(st)
+	}
+	sa, sb := a.Scores(), b.Scores()
+	for i := range sa {
+		if d := sa[i] - sb[i]; d > 1e-6 || d < -1e-6 {
+			t.Fatalf("scores differ with a skewed clock: %v vs %v", sa, sb)
+		}
+	}
+}
