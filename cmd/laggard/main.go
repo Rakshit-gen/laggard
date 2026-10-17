@@ -17,6 +17,8 @@ import (
 )
 
 const usage = `usage: laggard <command> [-out dir]
+       laggard watch [-restart s] [-steps n] [-patience n] [-thresholds g,n,c] < trace.jsonl
+       laggard export [-steps n] [-seed n] [-fault kind:where:factor:start] > trace.jsonl
 
 commands:
   detect    calibrate every detector on healthy jobs, then score it on one-fault jobs
@@ -24,6 +26,8 @@ commands:
   example   one job with a slow NIC, step by step
   bench     what reading one step's trace costs, at three job sizes
   all       everything above, written to -out
+  watch     read a trace from stdin and say what's slow and when to drain
+  export    write a simulated job's trace
 `
 
 // Sizes of the experiments. Steps per job is about 43 minutes of training.
@@ -45,6 +49,14 @@ func main() {
 		os.Exit(2)
 	}
 	cmd := os.Args[1]
+	switch cmd {
+	case "watch":
+		watchCmd(os.Args[2:])
+		return
+	case "export":
+		exportCmd(os.Args[2:])
+		return
+	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	out := fs.String("out", "", "directory for markdown and SVG output (default: print only)")
 	fs.Parse(os.Args[2:])
