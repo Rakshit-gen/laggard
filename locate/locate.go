@@ -42,7 +42,7 @@ type Alarm struct {
 	Where  int
 	Node   int     // the node to drain to get rid of it, -1 if unknown
 	Score  float64 // how far past its threshold, 1 = just crossed
-	Excess float64 // seconds per step it's costing, over the last few steps
+	Excess float64 // seconds per step it's costing the job, over the last few steps
 	Loss   float64 // seconds it's estimated to have cost since the alarm went up
 	Age    int     // steps since the alarm went up
 }
@@ -195,12 +195,6 @@ func (f *family) update(c *Config) {
 
 func (f *family) ready(c *Config) bool { return f.n > c.Warmup }
 
-// excessOf turns a log residual into seconds over normal, given the
-// measured seconds.
-func (f *family) excessOf(i int, seconds float64) float64 {
-	return seconds * (1 - math.Exp(-(f.resid[i] - f.mu[i])))
-}
-
 // Localizer watches one job.
 type Localizer struct {
 	cfg    Config
@@ -224,6 +218,15 @@ type Localizer struct {
 	ppX      []float64
 	nodeLog  []float64
 	tmp      []float64
+
+	// This step, kept for replays: every member's compute before each op
+	// and every op's transfer time.
+	st    *trace.Step
+	gap   []float64
+	off   []int
+	xf    []float64
+	clock []float64
+	speed []float64 // per rank, multiplies compute in a replay
 }
 
 func New(topo trace.Topology, cfg Config) *Localizer {
@@ -237,6 +240,7 @@ func New(topo trace.Topology, cfg Config) *Localizer {
 		pp:    newFamily(topo.PPLinks(), cfg.Warmup),
 		nicSc: make([]float64, n), lastExit: make([]float64, n), seen: make([]bool, n),
 		comp: make([]float64, n), dpX: make([]float64, topo.DPGroups()), ppX: make([]float64, topo.PPLinks()),
+		clock: make([]float64, n), speed: make([]float64, n),
 		nodeLog: make([]float64, topo.Nodes()), tmp: make([]float64, max(topo.G, topo.D, topo.S, topo.PPLinks())),
 	}
 	for i, m := range [Families]int{n, topo.Nodes(), n} {
@@ -270,19 +274,25 @@ func (l *Localizer) Observe(st *trace.Step) {
 	clear(l.comp)
 	clear(l.ppX)
 	first := !l.seen[0]
+	l.st, l.gap, l.off, l.xf = st, l.gap[:0], l.off[:0], l.xf[:0]
 	for i := range st.Ops {
 		op := &st.Ops[i]
 		xfer := math.Inf(1)
+		l.off = append(l.off, len(l.gap))
 		for j, r := range op.Ranks {
+			gap := 0.0
 			if l.seen[r] {
-				l.comp[r] += op.Enter[j] - l.lastExit[r]
+				gap = op.Enter[j] - l.lastExit[r]
+				l.comp[r] += gap
 			}
+			l.gap = append(l.gap, gap)
 			l.lastExit[r], l.seen[r] = op.Exit[j], true
 			// The member who arrived last didn't wait, so its time inside
 			// the operation is the transfer alone. Both ends of that
 			// subtraction come from one clock.
 			xfer = min(xfer, op.Exit[j]-op.Enter[j])
 		}
+		l.xf = append(l.xf, xfer)
 		switch op.Kind {
 		case trace.DP:
 			l.dpX[op.Group] = xfer
@@ -387,6 +397,34 @@ func (l *Localizer) polish() {
 	}
 }
 
+// replay rebuilds the step from its compute gaps and transfer times, with
+// each rank's compute multiplied by l.speed and each op's transfer by
+// xfer(op), and returns when the last rank finishes. A blocking
+// collective ends a transfer after its last member arrives, so this
+// reproduces the step's timing, and changing one component's speed shows
+// what that component cost the whole job, waiting included. A slowdown
+// that other noise already hides costs little; one on the critical path
+// costs all of itself and more.
+func (l *Localizer) replay(xfer func(op *trace.Op) float64) float64 {
+	clear(l.clock)
+	for i := range l.st.Ops {
+		op := &l.st.Ops[i]
+		g := l.gap[l.off[i]:]
+		last := 0.0
+		for j, r := range op.Ranks {
+			last = max(last, l.clock[r]+g[j]*l.speed[r])
+		}
+		x := l.xf[i]
+		if xfer != nil {
+			x *= xfer(op)
+		}
+		for _, r := range op.Ranks {
+			l.clock[r] = last + x
+		}
+	}
+	return slices.Max(l.clock)
+}
+
 // judge turns CUSUM states into alarms and accumulates their cost.
 func (l *Localizer) judge() {
 	l.alarms = l.alarms[:0]
@@ -394,20 +432,42 @@ func (l *Localizer) judge() {
 		return
 	}
 	t, h := l.topo, l.cfg.Thresholds
-	gpuSec := func(r int) float64 { return l.gpu.excessOf(r, l.comp[r]) }
-	nodeSec := func(n int) float64 { return l.node.excessOf(n, math.Exp(l.nodeLog[n])) }
-	nicSec := func(r int) float64 {
-		d, s, g := t.Coords(r)
-		x := l.dp.excessOf(t.DPGroup(s, g), l.dpX[t.DPGroup(s, g)])
-		if s > 0 {
-			i := t.PPLink(d, s-1, g)
-			x += l.pp.excessOf(i, l.ppX[i])
+	for r := range l.speed {
+		l.speed[r] = 1
+	}
+	base := l.replay(nil)
+	// healthy is how far below its learned normal an entity's residual
+	// says it would run when fixed.
+	healthy := func(f *family, i int) float64 { return math.Exp(-max(0, f.resid[i]-f.mu[i])) }
+	gpuSec := func(r int) float64 {
+		l.speed[r] = healthy(l.gpu, r)
+		x := base - l.replay(nil)
+		l.speed[r] = 1
+		return x
+	}
+	nodeSec := func(n int) float64 {
+		k := healthy(l.node, n)
+		for g := range t.G {
+			l.speed[n*t.G+g] = k
 		}
-		if s < t.S-1 {
-			i := t.PPLink(d, s, g)
-			x += l.pp.excessOf(i, l.ppX[i])
+		x := base - l.replay(nil)
+		for g := range t.G {
+			l.speed[n*t.G+g] = 1
 		}
 		return x
+	}
+	nicSec := func(r int) float64 {
+		d, s, g := t.Coords(r)
+		return base - l.replay(func(op *trace.Op) float64 {
+			switch {
+			case op.Kind == trace.DP && int(op.Group) == t.DPGroup(s, g):
+				return healthy(l.dp, int(op.Group))
+			case op.Kind == trace.PP && s > 0 && int(op.Group) == t.PPLink(d, s-1, g),
+				op.Kind == trace.PP && s < t.S-1 && int(op.Group) == t.PPLink(d, s, g):
+				return healthy(l.pp, int(op.Group))
+			}
+			return 1
+		})
 	}
 
 	// A NIC is suspect only when every group it's part of is slow. A DP
