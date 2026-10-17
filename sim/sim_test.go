@@ -36,16 +36,18 @@ func TestFaultsDontShiftTheNoise(t *testing.T) {
 	}
 }
 
-// A healthy 0.85 s step, give or take, and a 10% slow GPU makes the
-// whole job slower by more than the GPU's own share of the work.
-func TestOneSlowGPUSlowsEveryone(t *testing.T) {
-	healthy := run(8, 200, nil).Now() / 200
-	if healthy < 0.75 || healthy > 0.95 {
+// A healthy step is about 0.96 s. Noise already puts some path on the
+// critical path every step, so a GPU 10% slow mostly hides behind it,
+// while one 50% slow sets the pace.
+func TestSmallSlowdownsHideBehindNoise(t *testing.T) {
+	healthy := run(8, 300, nil).Now() / 300
+	if healthy < 0.9 || healthy > 1.0 {
 		t.Fatalf("healthy step %.3f s", healthy)
 	}
-	slow := run(8, 200, []Fault{{Kind: SlowGPU, Where: 70, Factor: 1.1}}).Now() / 200
-	if r := slow / healthy; r < 1.07 || r > 1.12 {
-		t.Fatalf("one GPU at 1.1x made the job %.3fx", r)
+	small := run(8, 300, []Fault{{Kind: SlowGPU, Where: 70, Factor: 1.1}}).Now() / 300 / healthy
+	big := run(8, 300, []Fault{{Kind: SlowGPU, Where: 70, Factor: 1.5}}).Now() / 300 / healthy
+	if small > 1.01 || big < 1.12 || big > 1.22 {
+		t.Fatalf("1.1x GPU made the job %.3fx, 1.5x made it %.3fx", small, big)
 	}
 }
 
