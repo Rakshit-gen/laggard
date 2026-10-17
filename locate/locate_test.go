@@ -113,3 +113,57 @@ func TestClockOffsetsDontMatter(t *testing.T) {
 		}
 	}
 }
+
+// firstDrain returns the step at which the localizer first wants a node
+// drained, or -1.
+func firstDrain(t *testing.T, steps int, f sim.Fault, set func(*locate.Config)) int {
+	t.Helper()
+	cfg := sim.Default()
+	c := locate.DefaultConfig()
+	set(&c)
+	l := locate.New(cfg.Topo, c)
+	w := sim.NewWorld(cfg, 5, []sim.Fault{f})
+	for i := range steps {
+		l.Observe(w.Step())
+		if n, ok := l.Evict(); ok {
+			if n != f.Node(cfg.Topo) {
+				t.Fatalf("drain of node %d, fault is on %d", n, f.Node(cfg.Topo))
+			}
+			return i
+		}
+	}
+	return -1
+}
+
+func TestDrainWaitsForPatience(t *testing.T) {
+	f := sim.Fault{Kind: sim.SlowGPU, Where: 17, Factor: 1.5, Start: 150}
+	at := firstDrain(t, 3000, f, func(c *locate.Config) { c.Restart, c.Steps, c.Patience = 120, 3000, 50 })
+	if at < f.Start+50 || at > f.Start+60 {
+		t.Fatalf("drained at step %d, want just after %d", at, f.Start+50)
+	}
+}
+
+func TestTransientIsWaitedOut(t *testing.T) {
+	f := sim.Fault{Kind: sim.SlowGPU, Where: 17, Factor: 2, Start: 150, End: 185}
+	if at := firstDrain(t, 600, f, func(c *locate.Config) { c.Restart, c.Steps, c.Patience = 120, 3000, 50 }); at >= 0 {
+		t.Fatalf("drained at step %d for a slowdown that ended by itself", at)
+	}
+}
+
+// Near the end of a job a small slowdown costs less than a restart.
+func TestNoDrainWhenTooLateToPayOff(t *testing.T) {
+	f := sim.Fault{Kind: sim.SlowGPU, Where: 17, Factor: 1.1, Start: 150}
+	if at := firstDrain(t, 600, f, func(c *locate.Config) { c.Restart, c.Steps, c.Patience = 600, 600, 50 }); at >= 0 {
+		t.Fatalf("drained at step %d with too few steps left to win back a restart", at)
+	}
+}
+
+// Without a horizon, drain once the alarm has cost a restart's worth.
+func TestSkiRentalWithoutHorizon(t *testing.T) {
+	f := sim.Fault{Kind: sim.SlowGPU, Where: 17, Factor: 1.5, Start: 150}
+	at := firstDrain(t, 3000, f, func(c *locate.Config) { c.Restart = 30 })
+	// About 0.25 s of excess compute per step, so 30 s takes ~120 steps.
+	if at < f.Start+90 || at > f.Start+160 {
+		t.Fatalf("drained at step %d", at)
+	}
+}
