@@ -60,7 +60,7 @@ func example(dir string) {
 	b.WriteString("\n")
 	emit(dir, "example.md", b.String())
 
-	ch := svg.Chart{Title: "Step time, NIC slows to 2/3 speed at step 800", XLabel: "step", YLabel: "seconds per step", XMin: 600, XMax: 1000, YMin: 0.8, YMax: 1.0,
+	ch := svg.Chart{Title: "Step time, NIC slows to 2/3 speed at step 800", XLabel: "step", YLabel: "seconds per step", XMin: 600, XMax: 1000, YMin: 0.8, YMax: 1.2,
 		Series: []svg.Series{{Name: "step time", X: xs, Y: ys}}, Marks: []svg.Mark{{X: 800, Label: "NIC slows"}}}
 	writeFile(dir, "example.svg", ch.Write)
 }

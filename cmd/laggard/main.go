@@ -31,7 +31,7 @@ commands:
   export    write a simulated job's trace
 `
 
-// Sizes of the experiments. Steps per job is about 43 minutes of training.
+// Sizes of the experiments. A 3000-step job is about 48 minutes of training.
 const (
 	steps        = 3000
 	calibRuns    = 32
@@ -316,7 +316,7 @@ func decide(dir string) {
 	fmt.Fprintf(&b, "## Draining decisions\n\nEach policy acts on its own alarms: the node it names is drained and the job restarts from a checkpoint on a spare, which costs the whole job a fixed number of seconds. %d one-fault runs of %d steps, %d per kind and size. Loss is extra job time over the same run with no fault; regret is extra time over the oracle, which knows the fault and picks the cheaper of draining the moment it starts and never draining. laggard is told how many steps the job has left and waits %d steps before draining.\n\n", len(eps), steps, decideReps, sim.Patience)
 	for _, r := range []float64{120, 600} {
 		rep := sim.Decision(cfg, r, calib, eps)
-		fmt.Fprintf(&b, "Restart costs %.0f s (about %.0f steps):\n\n| policy | mean loss | mean regret | drains | wrong node or no fault | waited-out transient drained |\n|---|---:|---:|---:|---:|---:|\n", r, r/0.85)
+		fmt.Fprintf(&b, "Restart costs %.0f s (about %.0f steps):\n\n| policy | mean loss | mean regret | drains | wrong node or no fault | drained during a transient |\n|---|---:|---:|---:|---:|---:|\n", r, r/0.96)
 		for _, row := range rep.Rows {
 			fmt.Fprintf(&b, "| %s | %.2f%% | %.2f%% | %d | %d | %d |\n", row.Name, 100*row.Loss, 100*row.Regret, row.Evictions, row.Wrong, row.Transient)
 		}

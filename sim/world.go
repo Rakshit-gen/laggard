@@ -46,7 +46,8 @@ type Config struct {
 }
 
 // Default is a 128-GPU job: 4 replicas of a 4-stage pipeline with 8-way
-// tensor parallelism. A step takes about 0.85 s.
+// tensor parallelism. A step takes about 0.96 s, 0.86 s of it without
+// the noise.
 func Default() Config {
 	return Config{
 		Topo: trace.Topology{D: 4, S: 4, G: 8}, Micro: 8, Chunks: 2,
