@@ -41,3 +41,29 @@ func TestSlowGPU(t *testing.T) {
 	l := watch(t, 200, []sim.Fault{{Kind: sim.SlowGPU, Where: r, Factor: 1.1, Start: 150}}, nil)
 	expect(t, l, locate.GPU, r, top.Node(r))
 }
+
+// A slow NIC makes its rank late to the next step's first TP all-reduce,
+// which looks like a slow GPU to anyone counting who arrived last. It must
+// come out as a NIC, and on the right node rather than the other DP
+// members'.
+func TestSlowNICIsNotAGPU(t *testing.T) {
+	top := sim.Default().Topo
+	r := top.Rank(3, 1, 6)
+	l := watch(t, 200, []sim.Fault{{Kind: sim.SlowNIC, Where: r, Factor: 1.5, Start: 150}}, nil)
+	expect(t, l, locate.NIC, r, top.Node(r))
+	for _, a := range l.Alarms() {
+		if a.Target == locate.GPU {
+			t.Fatalf("also blamed GPU %d", a.Where)
+		}
+	}
+}
+
+// NICs on the first and last stage have one PP link instead of two.
+func TestSlowNICAtPipelineEnds(t *testing.T) {
+	top := sim.Default().Topo
+	for _, s := range []int{0, top.S - 1} {
+		r := top.Rank(0, s, 2)
+		l := watch(t, 200, []sim.Fault{{Kind: sim.SlowNIC, Where: r, Factor: 2, Start: 150}}, nil)
+		expect(t, l, locate.NIC, r, top.Node(r))
+	}
+}
