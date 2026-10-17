@@ -51,7 +51,7 @@ type StepTime struct {
 	score       float64
 }
 
-func NewStepTime() *StepTime { return &StepTime{Window: 200, Run: 5, thr: 0.2} }
+func NewStepTime() *StepTime { return &StepTime{Window: 200, Run: 5, thr: 0.15} }
 
 func (s *StepTime) Name() string { return "step-time alert" }
 
@@ -118,7 +118,7 @@ type Blame struct {
 }
 
 func NewBlame(t trace.Topology) *Blame {
-	b := &Blame{Window: 20, topo: t, thr: 0.25}
+	b := &Blame{Window: 20, topo: t, thr: 0.07}
 	b.ring = make([][]float64, b.Window)
 	for i := range b.ring {
 		b.ring[i] = make([]float64, t.Ranks())
