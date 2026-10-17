@@ -3,6 +3,7 @@ package sim
 import (
 	"math"
 	"math/rand/v2"
+	"slices"
 
 	"github.com/Rakshit-gen/laggard/locate"
 	"github.com/Rakshit-gen/laggard/trace"
@@ -116,20 +117,14 @@ func track(o *Outcome, prev *int, step int, d Detector) {
 	*prev = node
 }
 
-// Calibrate sets each detector family's threshold just above the largest
-// score it reached on healthy runs, so every detector is held to the same
-// rule: no false alarms on these jobs.
-func Calibrate(cfg Config, eps []Episode, mk func() Detector) []float64 {
+// thresholds sets each family's threshold just above the largest score it
+// reached on healthy runs, so every detector is held to the same rule: no
+// false alarms on these jobs.
+func thresholds(maxScores [][]float64) []float64 {
 	var h []float64
-	results := parallel(len(eps), func(i int) []float64 {
-		return Watch(cfg, eps[i], []Detector{mk()})[0].MaxScores
-	})
-	for _, m := range results {
+	for _, m := range maxScores {
 		if h == nil {
-			h = make([]float64, len(m))
-			for i := range h {
-				h[i] = math.Inf(-1)
-			}
+			h = slices.Repeat([]float64{math.Inf(-1)}, len(m))
 		}
 		for i, v := range m {
 			h[i] = max(h[i], v)
