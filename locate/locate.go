@@ -115,13 +115,15 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Warmup:     100,
-		K:          1,
-		Clip:       4,
-		MaxNative:  math.Log(1.05),
-		Adapt:      0.002,
-		Quiet:      5,
-		Thresholds: [Families]float64{20, 20, 20},
+		Warmup:    100,
+		K:         1,
+		Clip:      4,
+		MaxNative: math.Log(1.05),
+		Adapt:     0.002,
+		Quiet:     5,
+		// A little above what calibration on the simulated 128-GPU job
+		// gives (10.6, 14.8 and 4.5). Recalibrate on your own healthy runs.
+		Thresholds: [Families]float64{12, 16, 6},
 	}
 }
 
