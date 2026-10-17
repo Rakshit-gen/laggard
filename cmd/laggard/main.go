@@ -22,6 +22,7 @@ const usage = `usage: laggard <command> [-out dir]
 
 commands:
   detect    calibrate every detector on healthy jobs, then score it on one-fault jobs
+  ablate    laggard with one idea switched off at a time
   decide    let each detector drain nodes and compare total job time
   example   one job with a slow NIC, step by step
   bench     what reading one step's trace costs, at three job sizes
@@ -65,10 +66,10 @@ func main() {
 			fatal(err)
 		}
 	}
-	run := map[string]func(string){"detect": detect, "decide": decide, "example": example, "bench": bench}
+	run := map[string]func(string){"detect": detect, "ablate": ablate, "decide": decide, "example": example, "bench": bench}
 	names := []string{cmd}
 	if cmd == "all" {
-		names = []string{"detect", "decide", "example", "bench"}
+		names = []string{"detect", "ablate", "decide", "example", "bench"}
 	}
 	for _, name := range names {
 		f, ok := run[name]
@@ -149,48 +150,7 @@ func detect(dir string) {
 	fmt.Fprintf(&b, "## Detection\n\nJob: %d GPUs (%d replicas x %d pipeline stages x %d-way tensor parallel), %d steps per run. Thresholds were set on %d healthy runs; false alarms are counted on %d different healthy runs (%d steps) and before the fault in every faulty run. Faulty runs: %d, one fault each, %d per kind and size.\n\n",
 		t.Ranks(), t.D, t.S, t.G, steps, calibRuns, healthyRuns, rep.HealthySteps, len(faulty), detectReps)
 	b.WriteString("A fault counts as caught when the first alarm after it starts names its node. \"Wrong node\" means the first alarm named a healthy one. Transient faults count if flagged before they end plus 20 steps.\n\n")
-	b.WriteString("| detector | caught | wrong node first | no location | missed | median steps to catch | false alarms, healthy runs | false alarms, before the fault |\n|---|---:|---:|---:|---:|---:|---:|---:|\n")
-	for i, name := range rep.Names {
-		vs := rep.Verdicts[i]
-		var c, w, u, fa int
-		var delays []int
-		for _, v := range vs {
-			fa += v.FalseBefore
-			switch {
-			case v.Caught:
-				c++
-				delays = append(delays, v.Delay)
-			case v.WrongFirst:
-				w++
-			case v.Unlocated:
-				u++
-			}
-		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %d | %d |\n", name, pct(c, len(vs)), pct(w, len(vs)), pct(u, len(vs)), pct(len(vs)-c-w-u, len(vs)), medianInt(delays), rep.HealthyAlarms[i], fa)
-	}
-
-	b.WriteString("\nCaught, by kind of fault:\n\n| detector |")
-	for _, g := range groups {
-		fmt.Fprintf(&b, " %s |", g)
-	}
-	b.WriteString("\n|---|" + strings.Repeat("---:|", len(groups)) + "\n")
-	for i, name := range rep.Names {
-		fmt.Fprintf(&b, "| %s |", name)
-		for _, g := range groups {
-			n, c := 0, 0
-			for _, v := range rep.Verdicts[i] {
-				if group(v.Fault) == g {
-					n++
-					if v.Caught {
-						c++
-					}
-				}
-			}
-			fmt.Fprintf(&b, " %s |", pct(c, n))
-		}
-		b.WriteString("\n")
-	}
-
+	summarize(&b, rep)
 	b.WriteString("\nlaggard by fault size. The first run of each persistent size has the fault from step 0; \"kind right\" means it also said GPU, NIC or node correctly.\n\n")
 	b.WriteString("| fault | slowdown | caught | kind right | median steps to catch | caught when present from step 0 |\n|---|---:|---:|---:|---:|---:|\n")
 	for _, c := range sim.Cases {
@@ -236,6 +196,52 @@ func detect(dir string) {
 	catchChart(dir, rep)
 }
 
+// summarize writes the per-detector table and the by-kind table.
+func summarize(b *strings.Builder, rep *sim.DetectionReport) {
+	b.WriteString("| detector | caught | wrong node first | no location | missed | median steps to catch | false alarms, healthy runs | false alarms, before the fault |\n|---|---:|---:|---:|---:|---:|---:|---:|\n")
+	for i, name := range rep.Names {
+		vs := rep.Verdicts[i]
+		var c, w, u, fa int
+		var delays []int
+		for _, v := range vs {
+			fa += v.FalseBefore
+			switch {
+			case v.Caught:
+				c++
+				delays = append(delays, v.Delay)
+			case v.WrongFirst:
+				w++
+			case v.Unlocated:
+				u++
+			}
+		}
+		fmt.Fprintf(b, "| %s | %s | %s | %s | %s | %s | %d | %d |\n", name, pct(c, len(vs)), pct(w, len(vs)), pct(u, len(vs)), pct(len(vs)-c-w-u, len(vs)), medianInt(delays), rep.HealthyAlarms[i], fa)
+	}
+
+	b.WriteString("\nCaught, by kind of fault:\n\n| detector |")
+	for _, g := range groups {
+		fmt.Fprintf(b, " %s |", g)
+	}
+	b.WriteString("\n|---|" + strings.Repeat("---:|", len(groups)) + "\n")
+	for i, name := range rep.Names {
+		fmt.Fprintf(b, "| %s |", name)
+		for _, g := range groups {
+			n, c := 0, 0
+			for _, v := range rep.Verdicts[i] {
+				if group(v.Fault) == g {
+					n++
+					if v.Caught {
+						c++
+					}
+				}
+			}
+			fmt.Fprintf(b, " %s |", pct(c, n))
+		}
+		b.WriteString("\n")
+	}
+
+}
+
 func fmtFloats(v []float64) string {
 	var s []string
 	for _, x := range v {
@@ -277,6 +283,29 @@ func catchChart(dir string, rep *sim.DetectionReport) {
 
 func shortName(n string) string {
 	return strings.NewReplacer("NVRx-style, defaults (0.7, 300 s)", "NVRx-style 0.7", "NVRx-style, calibrated, ", "NVRx-style cal. ").Replace(n)
+}
+
+func ablate(dir string) {
+	cfg := sim.Default()
+	rep := sim.Detection(cfg, sim.Ablations(cfg), sim.Healthy(calibSeed, calibRuns, steps), sim.Healthy(healthySeed, healthyRuns, steps), sim.Faulty(cfg, faultySeed, detectReps, steps))
+	var b strings.Builder
+	b.WriteString("## Ablation\n\nThe detection experiment again, with one part of laggard switched off at a time. Each variant gets its own thresholds from the same healthy runs, so each is held to zero false alarms there.\n\n")
+	summarize(&b, rep)
+	b.WriteString("\nNamed the right kind of component, of the faults caught:\n\n| variant | kind right |\n|---|---:|\n")
+	for i, name := range rep.Names {
+		c, k := 0, 0
+		for _, v := range rep.Verdicts[i] {
+			if v.Caught {
+				c++
+				if v.KindRight {
+					k++
+				}
+			}
+		}
+		fmt.Fprintf(&b, "| %s | %s |\n", name, pct(k, c))
+	}
+	b.WriteString("\n")
+	emit(dir, "ablation.md", b.String())
 }
 
 func decide(dir string) {
