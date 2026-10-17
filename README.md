@@ -29,6 +29,43 @@ Then two more for the decision:
 5. **Replay the step without the suspect** to get what it cost the job, waiting included. For a GPU at 1.1x, that is 0.0038 s per step against a true 0.0032 s. Charging the GPU's own extra time instead would overstate it about 20 times.
 6. **Drain if the cost over the remaining steps beats a restart**, after waiting 50 steps to see if it goes away on its own. With no known horizon, it falls back to ski rental: drain once the slowdown has cost one restart.
 
+## Results
+
+All numbers come from the simulator in `sim/`, which models a 4 x 4 x 8 job (128 GPUs, about 0.96 s per step) with the noise a real job has: data-dependent compute per replica, random hiccups, network congestion, checkpoint pauses, a 1% spread in GPU speed, and clock offset and drift per host. Every detector's thresholds were set on 32 healthy runs to give zero false alarms, then scored on 32 other healthy runs and 84 runs with one fault each.
+
+| detector | caught on the right node | wrong node first | median steps to catch | false alarms on healthy runs |
+|---|---:|---:|---:|---:|
+| **laggard** | **98%** | 0% | 3 | 0 |
+| last-arriver blame | 52% | 0% | 14 | 0 |
+| NVRx-style, defaults | 7% | 0% | 271 | 0 |
+| NVRx-style, calibrated, 30 s checks | 58% | 0% | 30 | 0 |
+| step-time alert | 0% (no location) | | | 1 |
+
+By kind of fault, laggard caught 97% of slow GPUs, 100% of slow NICs, 94% of slow nodes and 100% of transient slowdowns. The only baseline that found any slow NIC was last-arriver blame, at 58%. The two laggard misses were the smallest faults: a GPU 3% slow and a node 5% slow, both present from step 0.
+
+![Slow GPUs caught on the right node, by slowdown](results/gpu-catch.svg)
+
+The slow-NIC example shows why reading step time isn't enough. At 2/3 speed the NIC barely moves the step time. laggard named it one step after it slowed down. None of the baselines raised an alarm in 500 steps.
+
+![A NIC at 2/3 speed from step 800](results/example.svg)
+
+**Draining.** Each policy drained the nodes its own alarms named, with a restart costing the job 120 s or 600 s. Regret is the extra job time over an oracle that knows the fault and picks the better of draining immediately or never.
+
+| policy | regret, 120 s restart | regret, 600 s restart |
+|---|---:|---:|
+| **laggard** | **0.45%** | **0.08%** |
+| laggard, ski rental only | 0.92% | 1.45% |
+| laggard, drain on first alarm | 3.06% | 19.02% |
+| last-arriver blame | 1.19% | 8.00% |
+| NVRx-style, defaults | 2.18% | 1.42% |
+| never drain | 2.67% | 0.71% |
+
+Draining on the first alarm is worse than never draining. Most of what gets caught isn't worth a restart, and transients end on their own.
+
+**Cost.** Reading one step's trace takes 0.08 ms at 128 GPUs, 0.77 ms at 1024 and 3.4 ms at 4096, about 12 ns per member record, on one core of an Apple M4. Memory is 0.4 MB at 128 GPUs and 12 MB at 4096.
+
+Full tables: [detection](results/detection.md), [ablation](results/ablation.md), [draining](results/decision.md), [example](results/example.md), [cost](results/bench.md).
+
 ## Usage
 
 Run the simulator end to end and write every table and chart:
