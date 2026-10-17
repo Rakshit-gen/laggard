@@ -64,12 +64,12 @@ func (t Topology) Node(r int) int { return r / t.G }
 func (t Topology) TPGroup(d, s int) int { return d*t.S + s }
 
 // DPGroup holds the GPUs at stage s, position g, across all replicas.
-func (t Topology) DPGroups() int     { return t.S * t.G }
+func (t Topology) DPGroups() int        { return t.S * t.G }
 func (t Topology) DPGroup(s, g int) int { return s*t.G + g }
 
 // PPLink is the connection from stage s to s+1 at position g in replica d.
 // Forward activations and backward gradients both use it.
-func (t Topology) PPLinks() int          { return t.D * (t.S - 1) * t.G }
+func (t Topology) PPLinks() int           { return t.D * (t.S - 1) * t.G }
 func (t Topology) PPLink(d, s, g int) int { return (d*(t.S-1)+s)*t.G + g }
 
 // Members returns the ranks in each group, in a fixed order: TP by g,

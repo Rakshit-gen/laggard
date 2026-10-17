@@ -195,10 +195,10 @@ func New(topo trace.Topology, cfg Config) *Localizer {
 	n := topo.Ranks()
 	l := &Localizer{
 		cfg: cfg, topo: topo, tp: tp,
-		gpu:  newFamily(n, cfg.Warmup),
-		node: newFamily(topo.Nodes(), cfg.Warmup),
-		dp:   newFamily(topo.DPGroups(), cfg.Warmup),
-		pp:   newFamily(topo.PPLinks(), cfg.Warmup),
+		gpu:   newFamily(n, cfg.Warmup),
+		node:  newFamily(topo.Nodes(), cfg.Warmup),
+		dp:    newFamily(topo.DPGroups(), cfg.Warmup),
+		pp:    newFamily(topo.PPLinks(), cfg.Warmup),
 		nicSc: make([]float64, n), lastExit: make([]float64, n), seen: make([]bool, n),
 		comp: make([]float64, n), dpX: make([]float64, topo.DPGroups()), ppX: make([]float64, topo.PPLinks()),
 		nodeLog: make([]float64, topo.Nodes()), tmp: make([]float64, max(topo.G, topo.D, topo.S, topo.PPLinks())),
