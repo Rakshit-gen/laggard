@@ -12,7 +12,7 @@ import (
 
 func TestWatchNamesTheSlowNIC(t *testing.T) {
 	cfg := sim.Default()
-	f, err := parseFault("nic:77:1.5:150", cfg.Topo)
+	f, err := parseFault("nic:77:2:150", cfg.Topo)
 	if err != nil {
 		t.Fatal(err)
 	}
